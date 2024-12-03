@@ -7,6 +7,7 @@ use App\Models\ShopeeWebhookLog;
 use App\Models\ShopeeShop;
 use App\Models\ShopeeUpdate;
 use App\Models\ShopeeOrderStatusUpdate;
+use App\Models\ShopeeTrackingNumber;
 use Carbon\Carbon;
 
 class ShopeeWebhookController extends Controller
@@ -47,6 +48,10 @@ class ShopeeWebhookController extends Controller
                 $this->processOrderStatusUpdate($payload);
                 break;
 
+            case 4: // order_trackingno_push
+                $this->processOrderTrackingNumber($payload);
+                break;
+
             default:
                 // Caso o evento não seja reconhecido
                 return response()->json(['message' => 'Event not recognized'], 400);
@@ -77,6 +82,27 @@ class ShopeeWebhookController extends Controller
     }
 
     /**
+     * Processa o evento de número de rastreio do pedido (code: 4).
+     */
+    protected function processOrderTrackingNumber(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if (isset($data['ordersn']) && $shopId) {
+            ShopeeTrackingNumber::updateOrCreate(
+                ['ordersn' => $data['ordersn']],
+                [
+                    'shop_id' => $shopId,
+                    'package_number' => $data['package_number'] ?? null,
+                    'tracking_no' => $data['tracking_no'] ?? null,
+                    'updated_at' => Carbon::createFromTimestamp($payload['timestamp']),
+                ]
+            );
+        }
+    }
+
+    /**
      * Retorna o tipo de evento com base no código.
      */
     protected function getEventType($code)
@@ -87,6 +113,7 @@ class ShopeeWebhookController extends Controller
             12 => 'open_api_authorization_expiry',
             5 => 'shopee_updates',
             3 => 'order_status_push',
+            4 => 'order_trackingno_push',
         ];
 
         return $eventTypes[$code] ?? 'unknown_event';
