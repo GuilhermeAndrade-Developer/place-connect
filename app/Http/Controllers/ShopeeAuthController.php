@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ShopeeAuthService;
+use App\Models\ShopeeShop;
 use Illuminate\Http\Request;
 
 class ShopeeAuthController extends Controller
@@ -55,7 +56,16 @@ class ShopeeAuthController extends Controller
 
         $response = $this->shopeeAuthService->getAccessToken($code, $shopId);
 
-        // Salve o `access_token` e `refresh_token` no banco, se necessário
-        return response()->json($response);
+        // Salvar os tokens no banco de dados
+        ShopeeShop::updateOrCreate(
+            ['shop_id' => $shopId],
+            [
+                'access_token' => $response['access_token'],
+                'refresh_token' => $response['refresh_token'],
+                'token_expires_at' => now()->addSeconds($response['expire_in']),
+            ]
+        );
+
+        return response()->json(['message' => 'Tokens salvos com sucesso!', 'data' => $response]);
     }
 }

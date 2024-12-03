@@ -4,6 +4,7 @@ namespace App\Services;
 
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
+use App\Models\ShopeeShop;
 
 class ShopeeApiService
 {
@@ -40,20 +41,22 @@ class ShopeeApiService
         return hash_hmac('sha256', $baseString, $this->partnerKey);
     }
 
-    public function request($method, $path, $parameters = [], $accessToken = null, $shopId = null)
+    public function request($method, $path, $parameters = [], $shopId = null)
     {
         $timestamp = $this->getTimestamp();
+
+        // Buscar tokens da loja
+        $shop = ShopeeShop::where('shop_id', $shopId)->first();
+
+        if (!$shop || !$shop->access_token) {
+            throw new \Exception("Token de acesso não encontrado para a loja ID: $shopId");
+        }
+
+        $accessToken = $shop->access_token;
+
         $signature = $this->generateSignature($path, $timestamp, $accessToken, $shopId);
 
-        $url = "{$this->host}{$path}?partner_id={$this->partnerId}&timestamp={$timestamp}&sign={$signature}";
-
-        if ($accessToken) {
-            $url .= "&access_token={$accessToken}";
-        }
-
-        if ($shopId) {
-            $url .= "&shop_id={$shopId}";
-        }
+        $url = "{$this->host}{$path}?partner_id={$this->partnerId}&timestamp={$timestamp}&sign={$signature}&access_token={$accessToken}&shop_id={$shopId}";
 
         try {
             $response = $this->client->request($method, $url, [
