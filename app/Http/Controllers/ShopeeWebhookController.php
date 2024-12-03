@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\ShopeeWebhookLog;
 use App\Models\ShopeeShop;
 use App\Models\ShopeeUpdate;
+use App\Models\ShopeeOrderStatusUpdate;
 use Carbon\Carbon;
 
 class ShopeeWebhookController extends Controller
@@ -42,12 +43,37 @@ class ShopeeWebhookController extends Controller
                 $this->processShopeeUpdates($payload);
                 break;
 
+            case 3: // order_status_push
+                $this->processOrderStatusUpdate($payload);
+                break;
+
             default:
                 // Caso o evento não seja reconhecido
                 return response()->json(['message' => 'Event not recognized'], 400);
         }
 
         return response()->json(['message' => 'Webhook received'], 200);
+    }
+
+    /**
+     * Processa o evento de atualização de status do pedido (code: 3).
+     */
+    protected function processOrderStatusUpdate(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if (isset($data['ordersn']) && $shopId) {
+            ShopeeOrderStatusUpdate::updateOrCreate(
+                ['ordersn' => $data['ordersn']],
+                [
+                    'shop_id' => $shopId,
+                    'status' => $data['status'],
+                    'completed_scenario' => $data['completed_scenario'] ?? null,
+                    'update_time' => Carbon::createFromTimestamp($data['update_time']),
+                ]
+            );
+        }
     }
 
     /**
@@ -60,6 +86,7 @@ class ShopeeWebhookController extends Controller
             2 => 'shop_authorization_canceled_push',
             12 => 'open_api_authorization_expiry',
             5 => 'shopee_updates',
+            3 => 'order_status_push',
         ];
 
         return $eventTypes[$code] ?? 'unknown_event';
