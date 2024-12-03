@@ -14,5 +14,7 @@ class ShopeeShop extends Model
         'access_token',
         'refresh_token',
         'token_expires_at',
+        'expiration_notice_at',
+        'expiration_notified',
     ];
 }
