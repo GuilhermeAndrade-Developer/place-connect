@@ -9,6 +9,8 @@ use App\Models\ShopeeUpdate;
 use App\Models\ShopeeOrderStatusUpdate;
 use App\Models\ShopeeTrackingNumber;
 use App\Models\ShopeeShippingDocumentStatus;
+use App\Models\ShopeePromotion;
+use App\Models\ShopeePromotionUpdate;
 use Carbon\Carbon;
 
 class ShopeeWebhookController extends Controller
@@ -57,6 +59,14 @@ class ShopeeWebhookController extends Controller
                 $this->processShippingDocumentStatus($payload);
                 break;
 
+            case 7: // item_promotion_push
+                $this->processItemPromotionPush($payload);
+                break;
+
+            case 9: // promotion_update_push
+                $this->processPromotionUpdate($payload);
+                break;
+
             default:
                 // Caso o evento não seja reconhecido
                 return response()->json(['message' => 'Event not recognized'], 400);
@@ -65,80 +75,6 @@ class ShopeeWebhookController extends Controller
         return response()->json(['message' => 'Webhook received'], 200);
     }
 
-    /**
-     * Processa o evento de atualização de status do pedido (code: 3).
-     */
-    protected function processOrderStatusUpdate(array $payload)
-    {
-        $data = $payload['data'] ?? [];
-        $shopId = $payload['shop_id'] ?? null;
-
-        if (isset($data['ordersn']) && $shopId) {
-            ShopeeOrderStatusUpdate::updateOrCreate(
-                ['ordersn' => $data['ordersn']],
-                [
-                    'shop_id' => $shopId,
-                    'status' => $data['status'],
-                    'completed_scenario' => $data['completed_scenario'] ?? null,
-                    'update_time' => Carbon::createFromTimestamp($data['update_time']),
-                ]
-            );
-        }
-    }
-
-    /**
-     * Processa o evento de número de rastreio do pedido (code: 4).
-     */
-    protected function processOrderTrackingNumber(array $payload)
-    {
-        $data = $payload['data'] ?? [];
-        $shopId = $payload['shop_id'] ?? null;
-
-        if (isset($data['ordersn']) && $shopId) {
-            ShopeeTrackingNumber::updateOrCreate(
-                ['ordersn' => $data['ordersn']],
-                [
-                    'shop_id' => $shopId,
-                    'package_number' => $data['package_number'] ?? null,
-                    'tracking_no' => $data['tracking_no'] ?? null,
-                    'updated_at' => Carbon::createFromTimestamp($payload['timestamp']),
-                ]
-            );
-        }
-    }
-
-    protected function processShippingDocumentStatus(array $payload)
-    {
-        $data = $payload['data'];
-
-        ShopeeShippingDocumentStatus::updateOrCreate(
-            ['ordersn' => $data['ordersn']],
-            [
-                'shop_id' => $payload['shop_id'],
-                'package_number' => $data['package_number'],
-                'status' => $data['status'],
-            ]
-        );
-    }
-
-
-    /**
-     * Retorna o tipo de evento com base no código.
-     */
-    protected function getEventType($code)
-    {
-        $eventTypes = [
-            1 => 'shop_authorization_push',
-            2 => 'shop_authorization_canceled_push',
-            12 => 'open_api_authorization_expiry',
-            5 => 'shopee_updates',
-            3 => 'order_status_push',
-            4 => 'order_trackingno_push',
-            15 => 'shipping_document_status_push',
-        ];
-
-        return $eventTypes[$code] ?? 'unknown_event';
-    }
 
     /**
      * Processa o evento de autorização de loja.
@@ -241,5 +177,133 @@ class ShopeeWebhookController extends Controller
                 'update_time' => Carbon::createFromTimestamp($update['update_time']),
             ]);
         }
+    }
+
+    /**
+     * Processa o evento de atualização de status do pedido (code: 3).
+     */
+    protected function processOrderStatusUpdate(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if (isset($data['ordersn']) && $shopId) {
+            ShopeeOrderStatusUpdate::updateOrCreate(
+                ['ordersn' => $data['ordersn']],
+                [
+                    'shop_id' => $shopId,
+                    'status' => $data['status'],
+                    'completed_scenario' => $data['completed_scenario'] ?? null,
+                    'update_time' => Carbon::createFromTimestamp($data['update_time']),
+                ]
+            );
+        }
+    }
+
+    /**
+     * Processa o evento de número de rastreio do pedido (code: 4).
+     */
+    protected function processOrderTrackingNumber(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if (isset($data['ordersn']) && $shopId) {
+            ShopeeTrackingNumber::updateOrCreate(
+                ['ordersn' => $data['ordersn']],
+                [
+                    'shop_id' => $shopId,
+                    'package_number' => $data['package_number'] ?? null,
+                    'tracking_no' => $data['tracking_no'] ?? null,
+                    'updated_at' => Carbon::createFromTimestamp($payload['timestamp']),
+                ]
+            );
+        }
+    }
+
+    protected function processShippingDocumentStatus(array $payload)
+    {
+        $data = $payload['data'];
+
+        ShopeeShippingDocumentStatus::updateOrCreate(
+            ['ordersn' => $data['ordersn']],
+            [
+                'shop_id' => $payload['shop_id'],
+                'package_number' => $data['package_number'],
+                'status' => $data['status'],
+            ]
+        );
+    }
+
+    /**
+     * Processa o evento de promoção de produto (code: 7).
+     */
+    protected function processItemPromotionPush(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if ($shopId && isset($data['item_id'], $data['promotion_id'], $data['action'])) {
+            ShopeePromotion::updateOrCreate(
+                ['promotion_id' => $data['promotion_id']],
+                [
+                    'shop_id' => $shopId,
+                    'item_id' => $data['item_id'],
+                    'variation_id' => $data['variation_id'] ?? null,
+                    'promotion_type' => $data['promotion_type'] ?? 'unknown',
+                    'action' => $data['action'],
+                    'update_time' => isset($data['update_time']) ? Carbon::createFromTimestamp($data['update_time']) : null,
+                    'start_time' => isset($data['start_time']) ? Carbon::createFromTimestamp($data['start_time']) : null,
+                    'end_time' => isset($data['end_time']) ? Carbon::createFromTimestamp($data['end_time']) : null,
+                    'reserved_stock' => $data['reserved_stock'] ?? 0,
+                ]
+            );
+        }
+    }
+
+    /**
+     * Processa o evento de atualização de promoções (code: 9).
+     */
+    protected function processPromotionUpdate(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if ($shopId && isset($data['promotion_id'], $data['item_id'], $data['action'])) {
+            ShopeePromotionUpdate::updateOrCreate(
+                [
+                    'promotion_id' => $data['promotion_id'],
+                    'item_id' => $data['item_id'],
+                    'variation_id' => $data['variation_id'] ?? null,
+                ],
+                [
+                    'shop_id' => $shopId,
+                    'promotion_type' => $data['promotion_type'] ?? 'unknown',
+                    'action' => $data['action'],
+                    'start_time' => isset($data['start_time']) ? Carbon::createFromTimestamp($data['start_time']) : null,
+                    'end_time' => isset($data['end_time']) ? Carbon::createFromTimestamp($data['end_time']) : null,
+                ]
+            );
+        }
+    }
+
+    /**
+     * Retorna o tipo de evento com base no código.
+     */
+    protected function getEventType($code)
+    {
+        $eventTypes = [
+            1 => 'shop_authorization_push',
+            2 => 'shop_authorization_canceled_push',
+            12 => 'open_api_authorization_expiry',
+            5 => 'shopee_updates',
+            3 => 'order_status_push',
+            4 => 'order_trackingno_push',
+            15 => 'shipping_document_status_push',
+            7 => 'item_promotion_push',
+            9 => 'promotion_update_push',
+        ];
+
+        return $eventTypes[$code] ?? 'unknown_event';
     }
 }
