@@ -8,6 +8,7 @@ use App\Models\ShopeeShop;
 use App\Models\ShopeeUpdate;
 use App\Models\ShopeeOrderStatusUpdate;
 use App\Models\ShopeeTrackingNumber;
+use App\Models\ShopeeShippingDocumentStatus;
 use Carbon\Carbon;
 
 class ShopeeWebhookController extends Controller
@@ -50,6 +51,10 @@ class ShopeeWebhookController extends Controller
 
             case 4: // order_trackingno_push
                 $this->processOrderTrackingNumber($payload);
+                break;
+
+            case 15: // shipping_document_status_push
+                $this->processShippingDocumentStatus($payload);
                 break;
 
             default:
@@ -102,6 +107,21 @@ class ShopeeWebhookController extends Controller
         }
     }
 
+    protected function processShippingDocumentStatus(array $payload)
+    {
+        $data = $payload['data'];
+
+        ShopeeShippingDocumentStatus::updateOrCreate(
+            ['ordersn' => $data['ordersn']],
+            [
+                'shop_id' => $payload['shop_id'],
+                'package_number' => $data['package_number'],
+                'status' => $data['status'],
+            ]
+        );
+    }
+
+
     /**
      * Retorna o tipo de evento com base no código.
      */
@@ -114,6 +134,7 @@ class ShopeeWebhookController extends Controller
             5 => 'shopee_updates',
             3 => 'order_status_push',
             4 => 'order_trackingno_push',
+            15 => 'shipping_document_status_push',
         ];
 
         return $eventTypes[$code] ?? 'unknown_event';
