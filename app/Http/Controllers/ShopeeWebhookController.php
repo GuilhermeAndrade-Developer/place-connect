@@ -11,6 +11,8 @@ use App\Models\ShopeeTrackingNumber;
 use App\Models\ShopeeShippingDocumentStatus;
 use App\Models\ShopeePromotion;
 use App\Models\ShopeePromotionUpdate;
+use App\Models\ShopeeReservedStockChange;
+use App\Models\ShopeeWebchatMessage;
 use Carbon\Carbon;
 
 class ShopeeWebhookController extends Controller
@@ -65,6 +67,14 @@ class ShopeeWebhookController extends Controller
 
             case 9: // promotion_update_push
                 $this->processPromotionUpdate($payload);
+                break;
+
+            case 8: // reserved_stock_change_push
+                $this->processReservedStockChange($payload);
+                break;
+
+            case 10: // webchat_push
+                $this->processWebchatPush($payload);
                 break;
 
             default:
@@ -288,6 +298,66 @@ class ShopeeWebhookController extends Controller
     }
 
     /**
+     * Processa o evento de mudança no estoque reservado (code: 8).
+     */
+    protected function processReservedStockChange(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if (!$shopId || !isset($data['item_id'], $data['changed_values'])) {
+            return;
+        }
+
+        foreach ($data['changed_values'] as $change) {
+            if ($change['name'] === 'reserved_stock') {
+                ShopeeReservedStockChange::create([
+                    'shop_id' => $shopId,
+                    'item_id' => $data['item_id'],
+                    'variation_id' => $data['variation_id'] ?? null,
+                    'action' => $data['action'],
+                    'ordersn' => $data['ordersn'] ?? null,
+                    'promotion_type' => $data['promotion_type'] ?? null,
+                    'promotion_id' => $data['promotion_id'] ?? null,
+                    'old_value' => $change['old'] ?? null,
+                    'new_value' => $change['new'] ?? null,
+                    'update_time' => isset($data['update_time']) ? Carbon::createFromTimestamp($data['update_time']) : null,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Processa o evento de Webchat Push (code: 10).
+     */
+    protected function processWebchatPush(array $payload)
+    {
+        $data = $payload['data'] ?? [];
+        $shopId = $payload['shop_id'] ?? null;
+
+        if (!$shopId || empty($data['content'])) {
+            return;
+        }
+
+        $content = $data['content'];
+
+        ShopeeWebchatMessage::create([
+            'shop_id' => $shopId,
+            'conversation_id' => $content['conversation_id'] ?? null,
+            'message_id' => $content['message_id'] ?? null,
+            'from_id' => $content['from_id'] ?? null,
+            'from_user_name' => $content['from_user_name'] ?? null,
+            'to_id' => $content['to_id'] ?? null,
+            'to_user_name' => $content['to_user_name'] ?? null,
+            'message_type' => $content['message_type'] ?? null,
+            'content' => $content['content'] ?? null,
+            'region' => $content['region'] ?? null,
+            'is_in_chatbot_session' => $content['is_in_chatbot_session'] ?? false,
+            'created_timestamp' => isset($content['created_timestamp']) ? Carbon::createFromTimestamp($content['created_timestamp']) : null,
+        ]);
+    }
+
+    /**
      * Retorna o tipo de evento com base no código.
      */
     protected function getEventType($code)
@@ -302,6 +372,8 @@ class ShopeeWebhookController extends Controller
             15 => 'shipping_document_status_push',
             7 => 'item_promotion_push',
             9 => 'promotion_update_push',
+            8 => 'reserved_stock_change_push',
+            10 => 'webchat_push',
         ];
 
         return $eventTypes[$code] ?? 'unknown_event';
